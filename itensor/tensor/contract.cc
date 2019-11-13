@@ -27,6 +27,7 @@
 #include "itensor/tensor/sliceten.h"
 #include "itensor/indexset.h"
 #include "itensor/global.h"
+#include "itensor/util/print_macro.h"
 
 using std::vector;
 
@@ -811,8 +812,11 @@ contract(CProps const& p,
             cref = makeMatRef(C.store(),nrows(aref),ncols(bref));
             }
         }
-
+    // Print(aref);
+    // Print(bref);
+    // Print(beta);
     gemm(aref,bref,cref,alpha,beta);
+    // Print(cref);
 
     if(p.permuteC())
         {

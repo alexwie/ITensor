@@ -83,6 +83,25 @@ getBlock(BlockSparse & d,
     return data_range_type{};
     }
 
+
+template<typename T>
+int
+getBlockLoc(QDense<T> const& d,
+         IndexSet const& is,
+         Block const& block_ind)
+    {
+    auto r = long(block_ind.size());
+    if(r == 0) return 0;
+#ifdef DEBUG
+    if(is.order() != r) Error("Mismatched size of IndexSet and block_ind in getBlock");
+#endif
+    //Do binary search to see if there
+    //is a block with block index ii
+    auto [boff,loc] = offsetOfLoc(d.offsets,block_ind);
+    if(boff >= 0) return loc;
+    return -1;
+    }
+
 // From two input block-sparse tensors,
 // output the offsets and data size of the
 // result of contracting the tensors
@@ -144,23 +163,25 @@ getContractedOffsets(BlockSparseA const& A,
     for(auto& aio : A.offsets)
         {
         //Reconstruct indices labeling this block of A, put into Ablock
-        Ablockind = aio.block;
+        // Ablockind = aio.block;
 
         //Begin computing elements of Cblock(=destination of this block-block contraction)
         for(auto iA : range(rA))
-            if(AtoC[iA] != -1) Cblockind[AtoC[iA]] = Ablockind[iA];
+            if(AtoC[iA] != -1) Cblockind[AtoC[iA]] = aio.block[iA];
+	// if(AtoC[iA] != -1) Cblockind[AtoC[iA]] = Ablockind[iA];
 
         //Loop over blocks of B which contract with current block of A
         for(auto& bio : B.offsets)
             {
-            Bblockind = bio.block;
+            // Bblockind = bio.block;
 
             auto do_blocks_contract = true;
             for(auto iA : range(rA))
                 {
                 auto iB = AtoB[iA];
                 if(AtoB[iA] != -1)
-                    if(Ablockind[iA] != Bblockind[iB])
+                    // if(Ablockind[iA] != Bblockind[iB])
+                    if(aio.block[iA] != bio.block[iB])
                         {
                         do_blocks_contract = false;
                         break;
@@ -170,10 +191,12 @@ getContractedOffsets(BlockSparseA const& A,
 
             //Finish making Cblockind
             for(auto iB : range(rB))
-                if(BtoC[iB] != -1) Cblockind[BtoC[iB]] = Bblockind[iB];
+                // if(BtoC[iB] != -1) Cblockind[BtoC[iB]] = Bblockind[iB];
+                if(BtoC[iB] != -1) Cblockind[BtoC[iB]] = bio.block[iB];
 
             // Store the current contraction
-            blockContractions.push_back(std::make_tuple(Ablockind,Bblockind,Cblockind));
+            // blockContractions.push_back(std::make_tuple(Ablockind,Bblockind,Cblockind));
+            blockContractions.push_back(std::make_tuple(aio.block,bio.block,Cblockind));
 
             long blockDim = 1;   //accumulate dim of Indices
             for(auto j : range(order(Cis)))
@@ -224,14 +247,28 @@ loopContractedBlocks(QDense<TA> const& A,
                      std::vector<std::tuple<Block,Block,Block>> const& blockContractions,
                      Callable & callback)
     {
+      std::vector<bool> firstCblockContraction(C.offsets.size(), true);
     for(auto const& [Ablockind,Bblockind,Cblockind] : blockContractions)
         {
         auto ablock = getBlock(A,Ais,Ablockind);
         auto bblock = getBlock(B,Bis,Bblockind);
         auto cblock = getBlock(C,Cis,Cblockind);
+        auto cblockind = getBlockLoc(C,Cis,Cblockind);
+	// std::cout << cblockind<< "\n";
+        for(auto i : range(Cblockind.size()))
+	  {
+	    if(Cblockind[i] != C.offsets[cblockind].block[i])
+	      {
+		printf("Complain");exit(0);
+	      }
+	    if(cblockind == -1)
+	      {
+		printf("Complain2");exit(0);
+	      }
+	  }
         callback(ablock,Ablockind,
                  bblock,Bblockind,
-                 cblock,Cblockind);
+                 cblock,Cblockind, firstCblockContraction, cblockind);
         }
     }
 

@@ -33,6 +33,8 @@ using QDenseCplx = QDense<Cplx>;
 
 using Block = Labels;
 
+  struct DataUnitizializedTag {};
+
 // Define a block ordering according to (reverse)
 // lexicographical order
 bool
@@ -64,7 +66,8 @@ class QDense
         //^ Block index / data offset pairs.
         //  Assumed that block indices are
         //  in increasing order.
-
+      
+value_type* tmp_ptr;
     storage_type store;
         //^ tensor data stored contiguously
     //////////////
@@ -92,6 +95,16 @@ class QDense
          : offsets(off),
            store(std::forward<StoreArgs>(sargs)...)
            { }
+
+    QDense(DataUnitizializedTag dummy,
+	   BlockOffsets const& off,
+           long size)
+      : offsets(off),
+	tmp_ptr(new value_type[size]),
+	store(tmp_ptr, tmp_ptr + size)
+      { 
+	delete [] tmp_ptr;
+      }
 
     explicit operator bool() const { return !store.empty() && !offsets.empty(); }
 

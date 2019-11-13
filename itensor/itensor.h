@@ -1034,8 +1034,8 @@ operator<<(std::ostream & s, ITensor const& T);
 void
 randomize(ITensor & T, Args const& args = Args::global());
 
-long
-rank(ITensor const& T);
+// long
+// rank(ITensor const& T);
 
 template<typename... Inds>
 ITensor

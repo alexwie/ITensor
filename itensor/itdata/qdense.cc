@@ -24,6 +24,8 @@
 #include "itensor/itdata/qutil.h"
 #include "itensor/util/print_macro.h"
 
+#include <cmath>
+
 using std::vector;
 using std::move;
 
@@ -185,6 +187,15 @@ offsetOf(BlockOffsets const& offsets,
     auto blk = detail::binaryFind(offsets,blockind,compBlock());
     if(blk) return blk->offset;
     return -1;
+    }
+
+std::tuple<long, int>
+offsetOfLoc(BlockOffsets const& offsets,
+	    Block        const& blockind)
+    {
+    auto blk = detail::binaryFind(offsets,blockind,compBlock());
+    if(blk) return std::make_tuple(blk->offset, blk - offsets.data());
+    return std::make_tuple(-1, -1);;
     }
 
 Cplx
@@ -578,6 +589,8 @@ doTask(Contract& Con,
        QDense<VB> const& B,
        ManageStore& m)
     {
+      static int count=0;
+      int target=-1;
     using VC = common_type<VA,VB>;
     Labels Lind,
            Rind;
@@ -587,20 +600,36 @@ doTask(Contract& Con,
     const bool sortResult = false;
     contractIS(Con.Lis,Lind,Con.Ris,Rind,Con.Nis,Cind,sortResult);
 
-TIMER_START(32);
-    //Allocate storage for C
-    auto [Coffsets,Csize,blockContractions] = getContractedOffsets(A,Con.Lis,B,Con.Ris,Con.Nis);
-    auto nd = m.makeNewData<QDense<VC>>(Coffsets,Csize);
-TIMER_STOP(32);
-    auto& C = *nd;
 
+    //Allocate storage for C
+    TIMER_START(32);
+    auto [Coffsets,Csize,blockContractions] = getContractedOffsets(A,Con.Lis,B,Con.Ris,Con.Nis);
+    TIMER_STOP(32);
+    TIMER_START(33);
+    auto nd = (order(Con.Lis) + order(Con.Ris) != order(Con.Nis)) ?
+      m.makeNewData<QDense<VC>>(DataUnitizializedTag(),Coffsets,Csize) : 
+      m.makeNewData<QDense<VC>>(Coffsets,Csize);
+
+    // auto nd = m.makeNewData<QDense<VC>>(Coffsets,Csize);
+
+    TIMER_STOP(33);
+    auto& C = *nd;
+    // Print(C);
+    // auto& Cempty = C;
+    // if (count==target) 
+    //   {
+	// Print(A);
+	// Print(B);
+	// Print(Cempty);
+      // }
     //Function to execute for each pair of
     //contracted blocks of A and B
     auto do_contract = 
         [&Con,&Lind,&Rind,&Cind]
         (DataRange<const VA> ablock, Block const& Ablockind,
          DataRange<const VB> bblock, Block const& Bblockind,
-         DataRange<VC>       cblock, Block const& Cblockind)
+         DataRange<VC>       cblock, Block const& Cblockind,
+	 std::vector<bool>& nCblockContractions, int cblockind)
         {
         Range Arange,
               Brange,
@@ -618,17 +647,66 @@ TIMER_STOP(32);
         auto cref = makeRef(cblock,&Crange);
 
         //Compute cref += aref*bref
-        contract(aref,Lind,bref,Rind,cref,Cind,1.,1.);
+	if (nCblockContractions[cblockind])
+	  {	  
+	    // printf("a %d\n", cblockind);
+	    std::fill(cref.data(), cref.data() + cref.size(), 0.);
+	    for (auto c : cref)
+	      {
+		if (isnan(std::abs(c)))
+		  {
+		    printf("isnan before first contraction call\n");
+		  }
+	      }
+	    contract(aref,Lind,bref,Rind,cref,Cind,1.,1.);
+	    for (auto c : cref)
+	      {
+		if (isnan(std::abs(c)))
+		  {
+		    printf("isnan after first contraction call\n");
+		  }
+	      }
+	    nCblockContractions[cblockind] = false;
+	  }
+	else
+	  {
+	    // printf("b %d\n", cblockind);
+	    for (auto c : cref)
+	      {
+		if (isnan(std::abs(c)))
+		  {
+		    printf("isnan before repeat contraction call\n");
+		  }
+	      }
+	    contract(aref,Lind,bref,Rind,cref,Cind,1.,1.);
+	    for (auto c : cref)
+	      {
+		if (isnan(std::abs(c)))
+		  {
+		    printf("isnan after repeat contraction call\n");
+		  }
+	      }
+
+
+	  }
+	// for (auto i : range(cref.size()))
+	//   std::cout << cref[i] << std::endl;
+
         };
 
-TIMER_START(33);
+TIMER_START(34);
     loopContractedBlocks(A,Con.Lis,
                          B,Con.Ris,
                          C,Con.Nis,
                          blockContractions,
                          do_contract);
-TIMER_STOP(33);
+TIMER_STOP(34);
+ // if (count==target) 
+   // Print(C);
 
+
+ if (count==target) exit(1);
+ ++count;
 #ifdef USESCALE
     Con.scalefac = computeScalefac(C);
 #endif

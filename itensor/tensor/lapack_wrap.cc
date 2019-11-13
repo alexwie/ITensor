@@ -175,6 +175,8 @@ gemm_wrapper(bool transa,
              Cplx beta,
              Cplx* C)
     {
+      std::cout << "zbeta: " << beta << std::endl;
+
     LAPACK_INT lda = m,
                ldb = k;
 #ifdef PLATFORM_openblas
